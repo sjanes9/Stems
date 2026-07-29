@@ -90,23 +90,50 @@ class DemucsEngine {
       if (onProgress) onProgress({ phase: 'download', loaded, total });
     });
 
-    let providers;
+    // Try each backend as its OWN exclusive attempt rather than handing ORT
+    // a combined ['webgpu','wasm'] list: with a combined list, ORT silently
+    // falls back to wasm per-node for anything webgpu doesn't support (e.g.
+    // attention ops), so a wasm heap failure can still happen underneath an
+    // "auto"/webgpu choice with no visibility into which backend actually
+    // blew up. Isolating them gives a clean signal for each.
+    let attempts;
     if (executionProvider === 'auto') {
-      providers = (typeof navigator !== 'undefined' && navigator.gpu) ? ['webgpu', 'wasm'] : ['wasm'];
+      attempts = (typeof navigator !== 'undefined' && navigator.gpu) ? ['webgpu', 'wasm'] : ['wasm'];
     } else {
-      providers = [executionProvider];
+      attempts = [executionProvider];
     }
 
-    // graphOptimizationLevel 'all' runs layout/constant-folding passes that
-    // hold extra copies of the graph in memory during session creation --
-    // on a ~130-260MB model that's enough to blow WASM's heap (bad_alloc).
-    // 'basic' keeps memory use close to the model's raw size.
-    this.session = await ort.InferenceSession.create(arrayBuffer, {
-      executionProviders: providers,
-      graphOptimizationLevel: 'basic',
-      enableCpuMemArena: false,
-      enableMemPattern: false,
-    });
+    const errors = [];
+    this.session = null;
+    for (const provider of attempts) {
+      try {
+        this.log(`Creating session with execution provider: ${provider}`);
+        // graphOptimizationLevel 'all' runs layout/constant-folding passes
+        // that hold extra copies of the graph in memory during session
+        // creation -- on a ~130-260MB model that's enough to blow the wasm
+        // heap (bad_alloc). 'basic' keeps memory use close to the model's
+        // raw size.
+        this.session = await ort.InferenceSession.create(arrayBuffer, {
+          executionProviders: [provider],
+          graphOptimizationLevel: 'basic',
+          enableCpuMemArena: false,
+          enableMemPattern: false,
+        });
+        this.log(`Session created successfully with: ${provider}`);
+        break;
+      } catch (err) {
+        this.log(`Session creation FAILED with ${provider}: ${err.message}`);
+        errors.push(`${provider}: ${err.message}`);
+      }
+    }
+
+    if (!this.session) {
+      throw new Error(
+        `Could not create an inference session with any available backend (${attempts.join(', ')}). ` +
+        `This most likely means the model is too large for this browser/device to run in-browser. Details: ` +
+        errors.join(' | ')
+      );
+    }
 
     this.log('Model loaded. Inputs:', this.session.inputNames.join(', '),
       '| Outputs:', this.session.outputNames.join(', '));
