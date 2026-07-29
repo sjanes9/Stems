@@ -1,6 +1,12 @@
 const ORT_VERSION = '1.27.0';
 if (typeof ort !== 'undefined') {
   ort.env.wasm.wasmPaths = `https://cdn.jsdelivr.net/npm/onnxruntime-web@${ORT_VERSION}/dist/`;
+  // Multi-threaded WASM needs cross-origin isolation (COOP/COEP headers) to
+  // use SharedArrayBuffer; without it, forcing single-thread here avoids an
+  // extra failure mode on top of the model's already-heavy memory use.
+  if (!window.crossOriginIsolated) {
+    ort.env.wasm.numThreads = 1;
+  }
 }
 
 const engine = new DemucsEngine({ onLog: (msg) => console.log('[stems]', msg) });

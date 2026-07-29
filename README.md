@@ -79,6 +79,17 @@ doesn't hard-block it.
 - **CORS / network errors fetching the model** — some networks block
   Hugging Face; try a different network, or download the `.onnx` file
   yourself and change the override URL to a local path you're serving.
+- **"Can't create a session... std::bad_alloc"** — the browser's WASM heap
+  ran out of memory while loading the model (this happens before any audio
+  is even processed, so it isn't about your file). Try, in order: (1) make
+  sure Advanced settings → Model precision is set to **fp16**, not fp32 —
+  it's roughly half the memory; (2) close other tabs/apps to free RAM;
+  (3) use a desktop browser rather than mobile, and make sure it's 64-bit;
+  (4) reload the page (a previous failed attempt can leave partial state)
+  and try again. This is a hard browser/device memory ceiling, not a bug in
+  a specific file — if it persists on fp16 with a clean browser, the
+  device likely doesn't have enough free memory to run this model in-browser
+  at all.
 
 ## File structure
 

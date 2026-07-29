@@ -97,9 +97,15 @@ class DemucsEngine {
       providers = [executionProvider];
     }
 
+    // graphOptimizationLevel 'all' runs layout/constant-folding passes that
+    // hold extra copies of the graph in memory during session creation --
+    // on a ~130-260MB model that's enough to blow WASM's heap (bad_alloc).
+    // 'basic' keeps memory use close to the model's raw size.
     this.session = await ort.InferenceSession.create(arrayBuffer, {
       executionProviders: providers,
-      graphOptimizationLevel: 'all',
+      graphOptimizationLevel: 'basic',
+      enableCpuMemArena: false,
+      enableMemPattern: false,
     });
 
     this.log('Model loaded. Inputs:', this.session.inputNames.join(', '),
