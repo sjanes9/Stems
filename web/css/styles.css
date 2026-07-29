@@ -261,31 +261,3 @@ progress {
   line-height: 1.5;
 }
 
-.advanced-panel {
-  margin-top: 1rem;
-}
-
-.advanced-body {
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-  margin-top: 0.75rem;
-}
-
-.advanced-body label {
-  display: flex;
-  flex-direction: column;
-  gap: 0.3rem;
-  font-size: 0.85rem;
-  color: var(--text);
-}
-
-.advanced-body select,
-.advanced-body input[type='text'] {
-  padding: 0.4rem 0.5rem;
-  border-radius: 6px;
-  border: 1px solid var(--panel-border);
-  background: var(--bg);
-  color: var(--text);
-  font-size: 0.85rem;
-}

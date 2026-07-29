@@ -1,40 +1,50 @@
 # Stems
 
-A single-page HTML app that separates a song into instrument stems entirely
-in your browser — no server, no upload, no account. Load a `.wav` or `.mp3`,
-pick which stems you want, and get individual downloadable WAV files.
+A desktop app that separates a song into instrument stems using Meta's
+open-source HT-Demucs model. Load a `.wav` or `.mp3`, pick which stems you
+want, and get individual downloadable WAV files. Everything runs on your own
+machine — no upload, no account, no cloud service.
 
-## Running it
+## Getting it — Windows
 
-Because the app fetches a ~130–260MB AI model from Hugging Face at runtime,
-most browsers won't allow that from a plain `file://` page. Serve the folder
-over HTTP instead:
+Download `Stems.exe` from the latest build (see the repo's GitHub Actions
+run / Releases) and double-click it. A console window opens showing a local
+URL (e.g. `http://127.0.0.1:5000`) and your browser opens to it automatically.
+Leave the console window open while you use the app; closing it stops the
+server. The first time you separate a song, it downloads the AI model
+(roughly 300–500MB) and caches it, so later runs are faster to start.
+
+There's no installer — it's a single portable `.exe`. Expect the file itself
+to be large (in the 1–2GB range), since it bundles a full Python + PyTorch
+runtime so you don't have to install anything yourself.
+
+## Running it from source (any OS)
 
 ```bash
+git clone <this repo>
 cd Stems
-python3 -m http.server 8000
-# then open http://localhost:8000
+python3 -m venv .venv
+source .venv/bin/activate   # Windows: .venv\Scripts\activate
+pip install -r requirements.txt
+python server/app.py
 ```
 
-Any other static file server (`npx serve`, `caddy file-server`, etc.) works
-too.
+This opens your browser to the app automatically. Requires Python 3.10+.
 
 ## What it does
 
-- Decodes your `.wav`/`.mp3` locally using the Web Audio API and resamples it
-  to 44.1kHz stereo.
-- Runs Meta's open-source **HT-Demucs (6-stem)** source-separation model via
-  [onnxruntime-web](https://github.com/microsoft/onnxruntime) (WebAssembly,
-  or WebGPU when available), using a pretrained ONNX export hosted at
-  [`StemSplitio/htdemucs-6s-onnx`](https://huggingface.co/StemSplitio/htdemucs-6s-onnx)
-  on Hugging Face (MIT-licensed).
-- Processes audio in overlapping ~7.8s chunks with a triangular
-  overlap-add crossfade (the same windowing scheme the original Demucs
-  project uses) so stitched output has no clicks/seams at chunk boundaries.
+- Runs Meta's open-source **HT-Demucs (6-stem)** source-separation model
+  locally via the official [`demucs`](https://github.com/adefossez/demucs)
+  Python package (PyTorch under the hood) — the reference implementation,
+  not a reverse-engineered export.
+- A small local Flask server handles the upload, runs separation in a
+  background thread, and reports real progress back to the page as it works
+  through the track.
 - Lets you preview and download each selected stem as a WAV, or bundle all
-  selected stems into a single `.zip` (built client-side, no dependency).
-- Caches the model in the browser's Cache Storage after the first
-  download, so later separations skip re-downloading it.
+  selected stems into a single `.zip` download.
+- The pretrained model downloads automatically on first use and is cached
+  by `demucs` afterward (typically under your user cache directory), so
+  later runs don't re-download it.
 
 ## Stem mapping — read this
 
@@ -46,59 +56,42 @@ from the drum kit. HT-Demucs's 6-stem model is the finest split that
 exists today, with six real outputs: **drums, bass, other, vocals, guitar,
 piano**. The UI's checkboxes map onto those:
 
-| Checkbox            | Comes from HT-Demucs stem |
-|----------------------|---------------------------|
-| Drums                | `drums` (includes percussion) |
-| Bass                  | `bass` |
-| Guitar (lead+rhythm) | `guitar` (both combined, model can't split further) |
-| Piano / Keyboards    | `piano` |
-| Vocals                | `vocals` (bonus — included since it's produced for free) |
-| Other                 | `other` (anything the model can't attribute above) |
+| Checkbox              | Comes from HT-Demucs stem |
+|------------------------|---------------------------|
+| Drums                  | `drums` (includes percussion) |
+| Bass                    | `bass` |
+| Guitar (lead+rhythm)   | `guitar` (both combined, model can't split further) |
+| Piano / Keyboards      | `piano` |
+| Vocals                  | `vocals` (bonus — included since it's produced for free) |
+| Other                   | `other` (anything the model can't attribute above) |
 
 ## Performance expectations
 
-Running a hybrid-transformer neural net entirely in-browser via WASM is
-much slower than a native/server GPU setup. Expect **a few minutes per
-song** on CPU; enabling the WebGPU execution provider (Advanced settings,
-if your browser supports it) is noticeably faster. Very long tracks
-(> ~8 minutes) can also use a lot of memory, since every stem is held in
-memory as float32 PCM before being encoded to WAV — the app warns you but
-doesn't hard-block it.
+Separation runs on your CPU by default (GPU/CUDA is used automatically if
+PyTorch detects one). Expect anywhere from under a minute to several minutes
+per song depending on your hardware and track length.
 
 ## Troubleshooting
 
-- **"Could not automatically locate the ONNX model file"** — the app looks
-  up the model file list from the Hugging Face repo automatically; if that
-  repo's file layout changes, open **How this works / limitations →
-  Advanced settings** and paste a direct `.onnx` URL from
-  https://huggingface.co/StemSplitio/htdemucs-6s-onnx/tree/main into the
-  "Model URL override" field.
-- **Slow / tab freezes** — try a shorter clip first, switch Advanced
-  settings → Execution provider to WebGPU if your browser supports it, or
-  close other tabs to free up memory.
-- **CORS / network errors fetching the model** — some networks block
-  Hugging Face; try a different network, or download the `.onnx` file
-  yourself and change the override URL to a local path you're serving.
-- **"Can't create a session... std::bad_alloc"** — the browser's WASM heap
-  ran out of memory while loading the model (this happens before any audio
-  is even processed, so it isn't about your file). Try, in order: (1) make
-  sure Advanced settings → Model precision is set to **fp16**, not fp32 —
-  it's roughly half the memory; (2) close other tabs/apps to free RAM;
-  (3) use a desktop browser rather than mobile, and make sure it's 64-bit;
-  (4) reload the page (a previous failed attempt can leave partial state)
-  and try again. This is a hard browser/device memory ceiling, not a bug in
-  a specific file — if it persists on fp16 with a clean browser, the
-  device likely doesn't have enough free memory to run this model in-browser
-  at all.
+- **Nothing happens when double-clicking the exe** — antivirus/SmartScreen
+  sometimes holds back unsigned executables the first time; check Windows
+  Defender's notification area, or run it from a terminal (`Stems.exe`) to
+  see any error text directly.
+- **Stuck on "Queued..."** — the first request loads the model into memory
+  (and downloads it, on the very first run) before any progress shows;
+  large tracks or the very first run can take a while here.
+- **Separation fails partway** — check the console window for the actual
+  Python error; the most common causes are an unsupported/corrupt input
+  file, or running out of disk space for the model download.
 
 ## File structure
 
 ```
-index.html            UI markup
-css/styles.css         styling
-js/wav-encoder.js      Float32 PCM -> 16-bit WAV Blob
-js/zip-writer.js       store-only ZIP writer (bundles stems for download)
-js/model-cache.js      fetch + Cache Storage API for the ONNX model
-js/demucs-engine.js    model loading, resampling, chunked inference, overlap-add
-js/app.js              UI wiring / orchestration
+server/app.py            Flask app: upload handling, job queue, demucs invocation, static serving
+web/index.html            UI markup
+web/css/styles.css        styling
+web/js/app.js              UI wiring: upload, job polling, results
+requirements.txt          Python dependencies
+packaging/stems.spec      PyInstaller build spec (produces the Windows exe)
+.github/workflows/        CI workflow that builds Stems.exe on a Windows runner
 ```

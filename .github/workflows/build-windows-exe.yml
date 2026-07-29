@@ -1,0 +1,44 @@
+name: Build Windows exe
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - claude/audio-stem-separation-u911bd
+    paths:
+      - 'server/**'
+      - 'web/**'
+      - 'requirements.txt'
+      - 'packaging/**'
+      - '.github/workflows/build-windows-exe.yml'
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install CPU-only PyTorch
+        # Installed separately, before requirements.txt, so pip resolves the
+        # small CPU wheel instead of a multi-GB CUDA build -- keeps the exe
+        # portable to machines without an NVIDIA GPU/CUDA install.
+        run: pip install --index-url https://download.pytorch.org/whl/cpu torch
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: Build exe
+        run: pyinstaller packaging/stems.spec --noconfirm --clean
+
+      - name: Upload exe artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Stems-windows-exe
+          path: dist/Stems.exe
+          if-no-files-found: error
