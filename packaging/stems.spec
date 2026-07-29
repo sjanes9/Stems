@@ -1,10 +1,18 @@
 # PyInstaller spec for the Stems desktop app.
 # Build with: pyinstaller packaging/stems.spec --noconfirm --clean
-# Run from the repo root so relative paths ('web', 'server/app.py') resolve.
+#
+# PyInstaller resolves relative paths in a .spec file relative to the spec
+# file's OWN directory, not the cwd it was invoked from -- so paths here are
+# built from SPECPATH (injected by PyInstaller into this file's namespace)
+# rather than assumed to be relative to the repo root.
+
+import os
 
 from PyInstaller.utils.hooks import collect_all
 
-datas = [('web', 'web')]
+ROOT = os.path.dirname(SPECPATH)  # packaging/ -> repo root
+
+datas = [(os.path.join(ROOT, 'web'), 'web')]
 binaries = []
 hiddenimports = []
 
@@ -21,6 +29,7 @@ for pkg in [
     'safetensors',
     'huggingface_hub',
     'waitress',
+    'numpy',
 ]:
     pkg_datas, pkg_binaries, pkg_hiddenimports = collect_all(pkg)
     datas += pkg_datas
@@ -28,7 +37,7 @@ for pkg in [
     hiddenimports += pkg_hiddenimports
 
 a = Analysis(
-    ['server/app.py'],
+    [os.path.join(ROOT, 'server', 'app.py')],
     pathex=[],
     binaries=binaries,
     datas=datas,
