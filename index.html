@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Stems — client-side stem separation</title>
+  <link rel="stylesheet" href="css/styles.css" />
+</head>
+<body>
+  <main class="app">
+    <header class="app-header">
+      <h1>Stems</h1>
+      <p class="subtitle">
+        AI stem separation that runs entirely in your browser. Nothing is uploaded anywhere.
+      </p>
+    </header>
+
+    <section id="drop-zone" class="drop-zone" tabindex="0">
+      <p><strong>Click to choose</strong> or drag &amp; drop a <code>.wav</code> or <code>.mp3</code> file</p>
+      <input id="file-input" type="file" accept=".wav,.mp3,audio/wav,audio/mpeg" hidden />
+      <p id="file-info" class="file-info"></p>
+    </section>
+
+    <section class="stems-panel">
+      <h2>Stems to export</h2>
+      <div class="stem-grid">
+        <label class="stem-option">
+          <input type="checkbox" class="stem-checkbox" data-stem="drums" checked />
+          Drums <span class="hint">(incl. percussion)</span>
+        </label>
+        <label class="stem-option">
+          <input type="checkbox" class="stem-checkbox" data-stem="bass" checked />
+          Bass
+        </label>
+        <label class="stem-option">
+          <input type="checkbox" class="stem-checkbox" data-stem="guitar" checked />
+          Guitar <span class="hint">(lead + rhythm combined)</span>
+        </label>
+        <label class="stem-option">
+          <input type="checkbox" class="stem-checkbox" data-stem="piano" checked />
+          Piano / Keyboards
+        </label>
+        <label class="stem-option">
+          <input type="checkbox" class="stem-checkbox" data-stem="vocals" checked />
+          Vocals
+        </label>
+        <label class="stem-option">
+          <input type="checkbox" class="stem-checkbox" data-stem="other" />
+          Other <span class="hint">(anything left over)</span>
+        </label>
+      </div>
+    </section>
+
+    <button id="separate-btn" class="primary-btn" disabled>Separate Stems</button>
+
+    <div id="progress-section" class="progress-section" hidden>
+      <progress id="progress-bar" value="0" max="1"></progress>
+      <p id="progress-label" class="progress-label"></p>
+    </div>
+
+    <p id="error-banner" class="error-banner" hidden></p>
+
+    <section id="results-section" class="results-section" hidden>
+      <div class="results-header">
+        <h2>Results</h2>
+        <button id="download-all-btn" class="secondary-btn">Download All (.zip)</button>
+      </div>
+      <div id="results-list" class="results-list"></div>
+    </section>
+
+    <details class="info-panel">
+      <summary>How this works / limitations</summary>
+      <div class="info-body">
+        <p>
+          This app runs Meta's open-source <strong>HT-Demucs (6-stem)</strong> music source-separation
+          model fully client-side, using ONNX Runtime Web (WebAssembly/WebGPU). Your audio file never
+          leaves your computer.
+        </p>
+        <p>
+          No publicly available separation model distinguishes <em>lead</em> vs <em>rhythm</em> guitar, or
+          treats <em>percussion</em> and <em>keyboards</em> as fully separate stems from drums/piano — those
+          finer splits don't exist in any open model today. HT-Demucs's six real outputs (drums, bass,
+          other, vocals, guitar, piano) are the finest breakdown currently available, so the checkboxes
+          above map onto them: percussion is folded into Drums, and lead/rhythm guitar come out as one
+          combined Guitar stem.
+        </p>
+        <p>
+          The first time you click "Separate Stems," your browser downloads the AI model
+          (roughly 130–260&nbsp;MB depending on precision) from Hugging Face and caches it, so later runs
+          skip the download. Processing itself happens in chunks and can take a few minutes per song since
+          it's all running on your CPU/GPU in-browser rather than on a server.
+        </p>
+        <details class="advanced-panel">
+          <summary>Advanced settings</summary>
+          <div class="advanced-body">
+            <label>
+              Model precision
+              <select id="precision-select">
+                <option value="fp16" selected>fp16 (smaller download, default)</option>
+                <option value="fp32">fp32 (larger, marginally higher precision)</option>
+              </select>
+            </label>
+            <label>
+              Execution provider
+              <select id="ep-select">
+                <option value="auto" selected>Auto (WebGPU if available, else WASM)</option>
+                <option value="wasm">WebAssembly (CPU)</option>
+                <option value="webgpu">WebGPU</option>
+              </select>
+            </label>
+            <label>
+              Model URL override <span class="hint">(only needed if auto-discovery fails)</span>
+              <input id="model-url-override" type="text" placeholder="https://huggingface.co/.../model.onnx" />
+            </label>
+          </div>
+        </details>
+      </div>
+    </details>
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.27.0/dist/ort.min.js"></script>
+  <script src="js/wav-encoder.js"></script>
+  <script src="js/zip-writer.js"></script>
+  <script src="js/model-cache.js"></script>
+  <script src="js/demucs-engine.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
