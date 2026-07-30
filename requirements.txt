@@ -2,3 +2,4 @@ flask>=3.0,<4
 waitress>=3.0,<4
 demucs>=4.1,<5
 numpy
+audio-separator[cpu]>=0.30

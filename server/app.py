@@ -1,6 +1,9 @@
 """Local server for Stems: serves the web UI and runs Meta's open-source
 HT-Demucs (6-stem) model via the official `demucs` package to separate an
-uploaded song into drums/bass/guitar/piano/vocals/other WAV files.
+uploaded song into drums/bass/guitar/piano/vocals/other WAV files. The
+vocals stem is then optionally run through a second-stage UVR "Karaoke"
+model (via the `audio-separator` package) to split lead vocals from
+backing vocals/harmonies.
 
 Runs entirely on the user's machine -- nothing is uploaded anywhere else.
 """
@@ -27,7 +30,10 @@ else:
 
 WEB_DIR = BASE_DIR / "web"
 MODEL_NAME = "htdemucs_6s"
-STEM_KEYS = ["drums", "bass", "guitar", "piano", "vocals", "other"]
+KARAOKE_MODEL_NAME = "mel_band_roformer_karaoke_aufr33_viperx_sdr_10.1956.ckpt"
+DIRECT_STEM_KEYS = ["drums", "bass", "guitar", "piano", "other"]
+VOCAL_STEM_KEYS = ["lead_vocals", "backing_vocals"]
+STEM_KEYS = DIRECT_STEM_KEYS + VOCAL_STEM_KEYS
 
 app = Flask(__name__, static_folder=None)
 
@@ -36,6 +42,9 @@ JOBS_LOCK = threading.Lock()
 
 _separator = None
 _separator_lock = threading.Lock()
+
+_karaoke_separator = None
+_karaoke_separator_lock = threading.Lock()
 
 # demucs reuses one loaded model across jobs for speed, but its progress
 # callback is set per-instance (Separator.update_parameter), so only one
@@ -56,16 +65,58 @@ def get_separator():
         return _separator
 
 
+def get_karaoke_separator(out_dir):
+    """Lazily load the UVR "Karaoke" model (splits a vocals-only track into
+    lead vocal vs. backing vocals/harmonies). First call downloads its
+    checkpoint, cached under the system temp dir afterward."""
+    global _karaoke_separator
+    with _karaoke_separator_lock:
+        if _karaoke_separator is None:
+            from audio_separator.separator import Separator as KaraokeSeparator
+
+            model_cache_dir = Path(tempfile.gettempdir()) / "stems-audio-separator-models"
+            _karaoke_separator = KaraokeSeparator(model_file_dir=str(model_cache_dir))
+            _karaoke_separator.load_model(model_filename=KARAOKE_MODEL_NAME)
+        _karaoke_separator.output_dir = str(out_dir)
+        return _karaoke_separator
+
+
+def split_lead_backing_vocals(vocals_path, out_dir, requested_stems):
+    """Runs the UVR Karaoke model on an isolated vocals track, producing
+    lead_vocals.wav and/or backing_vocals.wav under out_dir (only the ones
+    actually requested are kept)."""
+    karaoke = get_karaoke_separator(out_dir)
+    output_files = karaoke.separate(str(vocals_path))
+
+    for path_str in output_files:
+        path = Path(path_str)
+        lower = path.name.lower()
+        if "instrumental" in lower and "backing_vocals" in requested_stems:
+            path.rename(out_dir / "backing_vocals.wav")
+        elif "vocals" in lower and "lead_vocals" in requested_stems:
+            path.rename(out_dir / "lead_vocals.wav")
+        else:
+            try:
+                path.unlink()
+            except OSError:
+                pass
+
+
 def run_separation(job_id, input_path, requested_stems):
     with JOBS_LOCK:
         job = JOBS[job_id]
         job["status"] = "processing"
 
+    wants_vocal_split = any(s in VOCAL_STEM_KEYS for s in requested_stems)
+    # demucs takes up the bulk of the time; leave the tail of the progress
+    # bar for the karaoke pass when it's needed.
+    demucs_progress_span = 0.85 if wants_vocal_split else 1.0
+
     def progress_callback(info):
         audio_length = info.get("audio_length")
         segment_offset = info.get("segment_offset")
         if audio_length:
-            frac = max(0.0, min(1.0, (segment_offset or 0) / audio_length))
+            frac = max(0.0, min(1.0, (segment_offset or 0) / audio_length)) * demucs_progress_span
             with JOBS_LOCK:
                 job["progress"] = frac
 
@@ -78,11 +129,21 @@ def run_separation(job_id, input_path, requested_stems):
             _, separated = separator.separate_audio_file(input_path)
 
             out_dir = Path(tempfile.mkdtemp(prefix="stems_out_"))
-            for stem in requested_stems:
-                source = separated.get(stem)
-                if source is None:
+            for stem in DIRECT_STEM_KEYS:
+                if stem not in requested_stems:
                     continue
-                save_audio(source, str(out_dir / f"{stem}.wav"), samplerate=separator.samplerate)
+                save_audio(separated[stem], str(out_dir / f"{stem}.wav"), samplerate=separator.samplerate)
+
+            if wants_vocal_split:
+                with JOBS_LOCK:
+                    job["progress"] = demucs_progress_span
+                # Named to avoid the substring "vocals" so the (Vocals)/
+                # (Instrumental) suffix matching in split_lead_backing_vocals
+                # can't be confused by the input filename itself.
+                vocals_path = out_dir / "_stage1_input.wav"
+                save_audio(separated["vocals"], str(vocals_path), samplerate=separator.samplerate)
+                split_lead_backing_vocals(vocals_path, out_dir, requested_stems)
+                vocals_path.unlink(missing_ok=True)
 
         with JOBS_LOCK:
             job["out_dir"] = str(out_dir)

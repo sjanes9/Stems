@@ -18,7 +18,8 @@ const STEM_LABELS = {
   bass: 'Bass',
   guitar: 'Guitar (Lead + Rhythm)',
   piano: 'Piano / Keyboards',
-  vocals: 'Vocals',
+  lead_vocals: 'Lead Vocals',
+  backing_vocals: 'Backing Vocals',
   other: 'Other',
 };
 

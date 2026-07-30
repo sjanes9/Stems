@@ -30,8 +30,16 @@ for pkg in [
     'huggingface_hub',
     'waitress',
     'numpy',
+    'audio_separator',
+    'onnxruntime',
+    'librosa',
+    'onnx2torch',
 ]:
-    pkg_datas, pkg_binaries, pkg_hiddenimports = collect_all(pkg)
+    try:
+        pkg_datas, pkg_binaries, pkg_hiddenimports = collect_all(pkg)
+    except Exception as exc:  # noqa: BLE001 - one missing/renamed package shouldn't sink the build
+        print(f'stems.spec: skipping collect_all for {pkg!r}: {exc}')
+        continue
     datas += pkg_datas
     binaries += pkg_binaries
     hiddenimports += pkg_hiddenimports

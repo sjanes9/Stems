@@ -41,8 +41,12 @@
           Piano / Keyboards
         </label>
         <label class="stem-option">
-          <input type="checkbox" class="stem-checkbox" data-stem="vocals" checked />
-          Vocals
+          <input type="checkbox" class="stem-checkbox" data-stem="lead_vocals" checked />
+          Lead Vocals
+        </label>
+        <label class="stem-option">
+          <input type="checkbox" class="stem-checkbox" data-stem="backing_vocals" checked />
+          Backing Vocals <span class="hint">(harmonies/BGVs)</span>
         </label>
         <label class="stem-option">
           <input type="checkbox" class="stem-checkbox" data-stem="other" />
@@ -77,17 +81,23 @@
           entirely on this machine and never leaves it.
         </p>
         <p>
-          No publicly available separation model distinguishes <em>lead</em> vs <em>rhythm</em> guitar, or
-          treats <em>percussion</em> and <em>keyboards</em> as fully separate stems from drums/piano — those
-          finer splits don't exist in any open model today. HT-Demucs's six real outputs (drums, bass,
-          other, vocals, guitar, piano) are the finest breakdown currently available, so the checkboxes
-          above map onto them: percussion is folded into Drums, and lead/rhythm guitar come out as one
-          combined Guitar stem.
+          The extracted vocals stem is then optionally run through a second AI pass — a community
+          "Karaoke" model from the UVR (Ultimate Vocal Remover) project — to split it further into
+          <strong>Lead Vocals</strong> and <strong>Backing Vocals</strong> (harmonies/BGVs).
         </p>
         <p>
-          The first time you separate a song, the app downloads the AI model (roughly 300–500&nbsp;MB) and
-          caches it, so later runs skip the download. Processing speed depends on your CPU/GPU — expect
-          anywhere from under a minute to a few minutes per song.
+          No publicly available <em>open</em> model distinguishes <em>lead</em> vs <em>rhythm</em> guitar, or
+          treats <em>percussion</em> and <em>keyboards</em> as fully separate stems from drums/piano — those
+          finer splits don't exist outside of proprietary commercial services (e.g. Moises.ai's paid API),
+          which this app doesn't use since everything here runs locally and free. HT-Demucs's remaining
+          outputs (drums, bass, other, guitar, piano) are the finest breakdown available locally, so
+          percussion is folded into Drums and lead/rhythm guitar come out as one combined Guitar stem.
+        </p>
+        <p>
+          The first time you separate a song, the app downloads the AI models (roughly 300–500&nbsp;MB for
+          HT-Demucs, plus another few hundred MB the first time you request Lead/Backing Vocals) and caches
+          them, so later runs skip the download. Processing speed depends on your CPU/GPU — expect anywhere
+          from under a minute to a few minutes per song.
         </p>
       </div>
     </details>

@@ -37,33 +37,51 @@ This opens your browser to the app automatically. Requires Python 3.10+.
   locally via the official [`demucs`](https://github.com/adefossez/demucs)
   Python package (PyTorch under the hood) — the reference implementation,
   not a reverse-engineered export.
+- Optionally runs a second pass on the extracted vocals stem using a
+  community **"Karaoke" model** from the [UVR (Ultimate Vocal
+  Remover)](https://github.com/nomadkaraoke/python-audio-separator) project,
+  splitting it into **Lead Vocals** and **Backing Vocals** (harmonies/BGVs).
+  This only runs if you check one of those two boxes, since it's an extra
+  model download + processing pass.
 - A small local Flask server handles the upload, runs separation in a
   background thread, and reports real progress back to the page as it works
   through the track.
 - Lets you preview and download each selected stem as a WAV, or bundle all
   selected stems into a single `.zip` download.
-- The pretrained model downloads automatically on first use and is cached
-  by `demucs` afterward (typically under your user cache directory), so
-  later runs don't re-download it.
+- Pretrained models download automatically on first use and are cached
+  afterward (`demucs` under your user cache directory; the karaoke model
+  under your system temp dir), so later runs don't re-download them.
 
 ## Stem mapping — read this
 
-You asked for checkboxes for **drums, lead guitar, rhythm guitar, bass,
-percussion, and keyboards**. No publicly available source-separation model
-(Demucs, Spleeter, or anything else) actually produces that breakdown —
-none of them distinguish lead vs. rhythm guitar, or split percussion out
-from the drum kit. HT-Demucs's 6-stem model is the finest split that
-exists today, with six real outputs: **drums, bass, other, vocals, guitar,
-piano**. The UI's checkboxes map onto those:
+You originally asked for checkboxes for **drums, lead guitar, rhythm
+guitar, bass, percussion, and keyboards**, and later for **lead vocals and
+backing vocals** too. Here's what's actually achievable with open, local,
+free models vs. not:
 
-| Checkbox              | Comes from HT-Demucs stem |
+- **Lead vocals vs. backing vocals**: achievable — a community "Karaoke"
+  model (trained specifically to split a lead vocal from
+  backing/harmony vocals) exists in the UVR ecosystem and is wired up here.
+- **Lead guitar vs. rhythm guitar**: not achievable locally/for free. No
+  open-source separation model makes this distinction — it's a proprietary
+  feature of commercial services like Moises.ai, not something downloadable
+  and runnable offline. Guitar stays as one combined stem.
+- **Percussion as its own stem, separate from the drum kit**: also not
+  available in any open model — it's folded into Drums.
+
+HT-Demucs's 6-stem model gives **drums, bass, other, vocals, guitar,
+piano**; the vocals stem is further split by the karaoke model when
+requested. The UI's checkboxes map onto all of this as:
+
+| Checkbox              | Comes from |
 |------------------------|---------------------------|
-| Drums                  | `drums` (includes percussion) |
-| Bass                    | `bass` |
-| Guitar (lead+rhythm)   | `guitar` (both combined, model can't split further) |
-| Piano / Keyboards      | `piano` |
-| Vocals                  | `vocals` (bonus — included since it's produced for free) |
-| Other                   | `other` (anything the model can't attribute above) |
+| Drums                  | HT-Demucs `drums` (includes percussion) |
+| Bass                    | HT-Demucs `bass` |
+| Guitar (lead+rhythm)   | HT-Demucs `guitar` (both combined, no open model splits this further) |
+| Piano / Keyboards      | HT-Demucs `piano` |
+| Lead Vocals             | HT-Demucs `vocals` → UVR karaoke model's lead-vocal output |
+| Backing Vocals          | HT-Demucs `vocals` → UVR karaoke model's backing-vocal output |
+| Other                   | HT-Demucs `other` (anything the model can't attribute above) |
 
 ## Performance expectations
 
