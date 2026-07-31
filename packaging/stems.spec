@@ -34,6 +34,7 @@ for pkg in [
     'onnxruntime',
     'librosa',
     'onnx2torch',
+    'imageio_ffmpeg',
 ]:
     try:
         pkg_datas, pkg_binaries, pkg_hiddenimports = collect_all(pkg)

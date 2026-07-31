@@ -28,6 +28,39 @@ if getattr(sys, "frozen", False):
 else:
     BASE_DIR = Path(__file__).resolve().parent.parent
 
+
+def _ensure_ffmpeg_on_path():
+    """audio-separator (via pydub/librosa) shells out to a literal "ffmpeg"
+    executable on PATH -- it's a system binary, not something pip installs,
+    so most users won't have it. imageio-ffmpeg bundles a static ffmpeg
+    build as package data (via a versioned filename like
+    "ffmpeg-win-x86_64-vX.Y.exe"), so copy that to a stable ffmpeg(.exe)
+    name once and add its folder to PATH, unless the user already has a
+    real ffmpeg available."""
+    import shutil
+
+    if shutil.which("ffmpeg"):
+        return
+    try:
+        import imageio_ffmpeg
+
+        bundled = imageio_ffmpeg.get_ffmpeg_exe()
+    except Exception:
+        return
+
+    target_dir = Path(tempfile.gettempdir()) / "stems-ffmpeg"
+    target_name = "ffmpeg.exe" if sys.platform == "win32" else "ffmpeg"
+    target_path = target_dir / target_name
+    if not target_path.exists():
+        target_dir.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(bundled, target_path)
+        if sys.platform != "win32":
+            target_path.chmod(0o755)
+    os.environ["PATH"] = str(target_dir) + os.pathsep + os.environ.get("PATH", "")
+
+
+_ensure_ffmpeg_on_path()
+
 WEB_DIR = BASE_DIR / "web"
 MODEL_NAME = "htdemucs_6s"
 KARAOKE_MODEL_NAME = "mel_band_roformer_karaoke_aufr33_viperx_sdr_10.1956.ckpt"
