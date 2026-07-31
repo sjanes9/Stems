@@ -33,10 +33,15 @@ This opens your browser to the app automatically. Requires Python 3.10+.
 
 ## What it does
 
-- Runs Meta's open-source **HT-Demucs (6-stem)** source-separation model
-  locally via the official [`demucs`](https://github.com/adefossez/demucs)
-  Python package (PyTorch under the hood) — the reference implementation,
-  not a reverse-engineered export.
+- Runs Meta's open-source **HT-Demucs** source-separation model locally via
+  the official [`demucs`](https://github.com/adefossez/demucs) Python
+  package (PyTorch under the hood) — the reference implementation, not a
+  reverse-engineered export. Two models are selectable in the UI:
+  **htdemucs_6s** (6 stems, adds Guitar/Piano) or **htdemucs_ft** (4 stems,
+  no Guitar/Piano, but measurably higher fidelity per Demucs' own docs —
+  pick this if you don't need Guitar/Piano isolated). A "Better" quality
+  toggle also runs Demucs' shift-trick ensembling for fewer artifacts, at
+  roughly proportionally longer processing time.
 - Optionally runs a second pass on the extracted vocals stem using a
   community **"Karaoke" model** from the [UVR (Ultimate Vocal
   Remover)](https://github.com/nomadkaraoke/python-audio-separator) project,
@@ -69,9 +74,11 @@ free models vs. not:
 - **Percussion as its own stem, separate from the drum kit**: also not
   available in any open model — it's folded into Drums.
 
-HT-Demucs's 6-stem model gives **drums, bass, other, vocals, guitar,
-piano**; the vocals stem is further split by the karaoke model when
-requested. The UI's checkboxes map onto all of this as:
+HT-Demucs's 6-stem model (htdemucs_6s) gives **drums, bass, other, vocals,
+guitar, piano**; the 4-stem model (htdemucs_ft) gives **drums, bass, other,
+vocals** at higher fidelity. The vocals stem is further split by the
+karaoke model when requested, regardless of which base model you picked.
+The UI's checkboxes map onto all of this as:
 
 | Checkbox              | Comes from |
 |------------------------|---------------------------|
@@ -101,6 +108,12 @@ per song depending on your hardware and track length.
 - **Separation fails partway** — check the console window for the actual
   Python error; the most common causes are an unsupported/corrupt input
   file, or running out of disk space for the model download.
+- **Stems sound bad / muddy / artifact-y** — switch Model to "Best Quality"
+  if you don't need Guitar/Piano (htdemucs_6s trades quality for those two
+  extra stems), and/or switch Quality to "Better" for the shift-trick
+  ensembling pass. Also worth knowing: no separation model gets a perfect
+  clean split — some bleed between stems (e.g. a bit of vocal in the
+  "other" stem) is normal even for the best available open models.
 
 ## File structure
 

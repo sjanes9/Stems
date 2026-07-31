@@ -21,6 +21,28 @@
       <p id="file-info" class="file-info"></p>
     </section>
 
+    <section class="quality-panel">
+      <label>
+        Model
+        <select id="model-select">
+          <option value="6stem" selected>Standard (6 stems — adds Guitar &amp; Piano)</option>
+          <option value="4stem_hq">Best Quality (4 stems — Drums, Bass, Vocals, Other)</option>
+        </select>
+      </label>
+      <label>
+        Quality
+        <select id="quality-select">
+          <option value="fast" selected>Fast</option>
+          <option value="better">Better <span class="hint">(slower, fewer artifacts)</span></option>
+        </select>
+      </label>
+      <p class="hint quality-hint">
+        "Best Quality" uses HT-Demucs's higher-fidelity 4-stem model (no Guitar/Piano). "Better"
+        quality runs an extra averaging pass ("shift trick") that reduces artifacts at the cost of
+        roughly proportionally longer processing time.
+      </p>
+    </section>
+
     <section class="stems-panel">
       <h2>Stems to export</h2>
       <div class="stem-grid">
@@ -33,11 +55,11 @@
           Bass
         </label>
         <label class="stem-option">
-          <input type="checkbox" class="stem-checkbox" data-stem="guitar" checked />
+          <input type="checkbox" class="stem-checkbox guitar-piano-only" data-stem="guitar" checked />
           Guitar <span class="hint">(lead + rhythm combined)</span>
         </label>
         <label class="stem-option">
-          <input type="checkbox" class="stem-checkbox" data-stem="piano" checked />
+          <input type="checkbox" class="stem-checkbox guitar-piano-only" data-stem="piano" checked />
           Piano / Keyboards
         </label>
         <label class="stem-option">
@@ -76,9 +98,16 @@
       <summary>How this works / limitations</summary>
       <div class="info-body">
         <p>
-          This app runs Meta's open-source <strong>HT-Demucs (6-stem)</strong> music source-separation
-          model locally via the official <code>demucs</code> Python package. Your audio file is processed
+          This app runs Meta's open-source <strong>HT-Demucs</strong> music source-separation model
+          locally via the official <code>demucs</code> Python package. Your audio file is processed
           entirely on this machine and never leaves it.
+        </p>
+        <p>
+          Two models are available: <strong>htdemucs_6s</strong> (6 stems, adds Guitar/Piano) and
+          <strong>htdemucs_ft</strong> (4 stems, no Guitar/Piano). Demucs' own authors document
+          htdemucs_6s as measurably lower-fidelity than htdemucs_ft — splitting out Guitar and Piano
+          costs separation quality on every stem, not just those two. If you don't need Guitar/Piano
+          isolated, pick "Best Quality" above for noticeably cleaner Drums/Bass/Vocals/Other.
         </p>
         <p>
           The extracted vocals stem is then optionally run through a second AI pass — a community
@@ -94,10 +123,11 @@
           percussion is folded into Drums and lead/rhythm guitar come out as one combined Guitar stem.
         </p>
         <p>
-          The first time you separate a song, the app downloads the AI models (roughly 300–500&nbsp;MB for
-          HT-Demucs, plus another few hundred MB the first time you request Lead/Backing Vocals) and caches
-          them, so later runs skip the download. Processing speed depends on your CPU/GPU — expect anywhere
-          from under a minute to a few minutes per song.
+          The first time you use each model, the app downloads it and caches it, so later runs skip the
+          download: htdemucs_6s is roughly 300–500&nbsp;MB, and htdemucs_ft (a bag of 4 models) is
+          larger, around 1&nbsp;GB. The first time you request Lead/Backing Vocals it also downloads the
+          karaoke model (a few hundred MB more). Processing speed depends on your CPU/GPU and the
+          quality settings above — expect anywhere from under a minute to several minutes per song.
         </p>
       </div>
     </details>

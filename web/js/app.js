@@ -4,6 +4,9 @@ const els = {
   fileInfo: document.getElementById('file-info'),
   separateBtn: document.getElementById('separate-btn'),
   checkboxes: Array.from(document.querySelectorAll('.stem-checkbox')),
+  guitarPianoCheckboxes: Array.from(document.querySelectorAll('.guitar-piano-only')),
+  modelSelect: document.getElementById('model-select'),
+  qualitySelect: document.getElementById('quality-select'),
   progressSection: document.getElementById('progress-section'),
   progressBar: document.getElementById('progress-bar'),
   progressLabel: document.getElementById('progress-label'),
@@ -42,6 +45,18 @@ function updateSeparateEnabled() {
 }
 
 els.checkboxes.forEach((cb) => cb.addEventListener('change', updateSeparateEnabled));
+
+function applyModelAvailability() {
+  const isHighQuality = els.modelSelect.value === '4stem_hq';
+  els.guitarPianoCheckboxes.forEach((cb) => {
+    cb.disabled = isHighQuality;
+    cb.checked = !isHighQuality;
+    cb.closest('.stem-option').classList.toggle('disabled', isHighQuality);
+  });
+  updateSeparateEnabled();
+}
+
+els.modelSelect.addEventListener('change', applyModelAvailability);
 
 function setProgress(fraction, label) {
   els.progressSection.hidden = false;
@@ -152,6 +167,8 @@ els.separateBtn.addEventListener('click', async () => {
     formData.append('file', currentFile);
     const selectedStems = els.checkboxes.filter((c) => c.checked).map((c) => c.dataset.stem);
     formData.append('stems', selectedStems.join(','));
+    formData.append('model', els.modelSelect.value);
+    formData.append('quality', els.qualitySelect.value);
 
     setProgress(null, 'Uploading...');
 
@@ -196,4 +213,4 @@ els.separateBtn.addEventListener('click', async () => {
   }
 });
 
-updateSeparateEnabled();
+applyModelAvailability();

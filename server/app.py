@@ -1,9 +1,10 @@
 """Local server for Stems: serves the web UI and runs Meta's open-source
-HT-Demucs (6-stem) model via the official `demucs` package to separate an
-uploaded song into drums/bass/guitar/piano/vocals/other WAV files. The
-vocals stem is then optionally run through a second-stage UVR "Karaoke"
-model (via the `audio-separator` package) to split lead vocals from
-backing vocals/harmonies.
+HT-Demucs model via the official `demucs` package to separate an uploaded
+song into stem WAV files. Two models are selectable: htdemucs_6s (6 stems,
+incl. guitar/piano, lower fidelity) or htdemucs_ft (4 stems, higher
+fidelity, no guitar/piano). The vocals stem is then optionally run through
+a second-stage UVR "Karaoke" model (via the `audio-separator` package) to
+split lead vocals from backing vocals/harmonies.
 
 Runs entirely on the user's machine -- nothing is uploaded anywhere else.
 """
@@ -62,18 +63,29 @@ def _ensure_ffmpeg_on_path():
 _ensure_ffmpeg_on_path()
 
 WEB_DIR = BASE_DIR / "web"
-MODEL_NAME = "htdemucs_6s"
 KARAOKE_MODEL_NAME = "mel_band_roformer_karaoke_aufr33_viperx_sdr_10.1956.ckpt"
-DIRECT_STEM_KEYS = ["drums", "bass", "guitar", "piano", "other"]
+
+# htdemucs_6s adds Guitar/Piano stems but is measurably lower-fidelity than
+# htdemucs_ft (per Demucs' own documentation) -- htdemucs_ft is a "bag" of
+# 4 fine-tuned models averaged together, higher quality but only produces
+# drums/bass/vocals/other (no guitar/piano) and is ~4x slower per shift.
+MODEL_CHOICES = {
+    "6stem": "htdemucs_6s",
+    "4stem_hq": "htdemucs_ft",
+}
+MODEL_DIRECT_STEMS = {
+    "6stem": ["drums", "bass", "guitar", "piano", "other"],
+    "4stem_hq": ["drums", "bass", "other"],
+}
 VOCAL_STEM_KEYS = ["lead_vocals", "backing_vocals"]
-STEM_KEYS = DIRECT_STEM_KEYS + VOCAL_STEM_KEYS
+STEM_KEYS = list({s for stems in MODEL_DIRECT_STEMS.values() for s in stems}) + VOCAL_STEM_KEYS
 
 app = Flask(__name__, static_folder=None)
 
 JOBS = {}
 JOBS_LOCK = threading.Lock()
 
-_separator = None
+_separators = {}
 _separator_lock = threading.Lock()
 
 _karaoke_separator = None
@@ -86,16 +98,17 @@ _karaoke_separator_lock = threading.Lock()
 PROCESSING_LOCK = threading.Lock()
 
 
-def get_separator():
-    """Lazily load the demucs model (first call downloads ~300-500MB of
-    pretrained weights via demucs' own downloader, cached afterward)."""
-    global _separator
+def get_separator(model_key):
+    """Lazily load a demucs model (first call for a given model downloads
+    ~300MB-1GB+ of pretrained weights via demucs' own downloader, cached
+    afterward). Keeps one loaded instance per model so switching between
+    them across jobs doesn't require reloading every time."""
     with _separator_lock:
-        if _separator is None:
+        if model_key not in _separators:
             from demucs.api import Separator
 
-            _separator = Separator(model=MODEL_NAME)
-        return _separator
+            _separators[model_key] = Separator(model=MODEL_CHOICES[model_key])
+        return _separators[model_key]
 
 
 def get_karaoke_separator(out_dir):
@@ -135,7 +148,7 @@ def split_lead_backing_vocals(vocals_path, out_dir, requested_stems):
                 pass
 
 
-def run_separation(job_id, input_path, requested_stems):
+def run_separation(job_id, input_path, requested_stems, model_key, shifts):
     with JOBS_LOCK:
         job = JOBS[job_id]
         job["status"] = "processing"
@@ -147,22 +160,36 @@ def run_separation(job_id, input_path, requested_stems):
 
     def progress_callback(info):
         audio_length = info.get("audio_length")
-        segment_offset = info.get("segment_offset")
-        if audio_length:
-            frac = max(0.0, min(1.0, (segment_offset or 0) / audio_length)) * demucs_progress_span
-            with JOBS_LOCK:
-                job["progress"] = frac
+        if not audio_length:
+            return
+        # htdemucs_ft is a "bag" of several sub-models, and shifts>1 reruns
+        # each one on time-shifted copies -- segment_offset alone resets to
+        # 0 at the start of every sub-model/shift, so folding in
+        # model_idx_in_bag/shift_idx keeps the bar moving forward smoothly
+        # instead of jumping back repeatedly.
+        segment_offset = info.get("segment_offset") or 0
+        shift_idx = info.get("shift_idx") or 0
+        model_idx = info.get("model_idx_in_bag") or 0
+        total_models = info.get("models") or 1
+        within_shift = max(0.0, min(1.0, segment_offset / audio_length))
+        within_model = (shift_idx + within_shift) / max(1, shifts)
+        overall = (model_idx + within_model) / max(1, total_models)
+        frac = max(0.0, min(1.0, overall)) * demucs_progress_span
+        with JOBS_LOCK:
+            job["progress"] = frac
 
     try:
         from demucs.api import save_audio
 
+        direct_stems = MODEL_DIRECT_STEMS[model_key]
+
         with PROCESSING_LOCK:
-            separator = get_separator()
-            separator.update_parameter(callback=progress_callback, callback_arg={})
+            separator = get_separator(model_key)
+            separator.update_parameter(callback=progress_callback, callback_arg={}, shifts=shifts)
             _, separated = separator.separate_audio_file(input_path)
 
             out_dir = Path(tempfile.mkdtemp(prefix="stems_out_"))
-            for stem in DIRECT_STEM_KEYS:
+            for stem in direct_stems:
                 if stem not in requested_stems:
                     continue
                 save_audio(separated[stem], str(out_dir / f"{stem}.wav"), samplerate=separator.samplerate)
@@ -213,9 +240,16 @@ def api_separate():
     if suffix not in (".wav", ".mp3"):
         return jsonify({"error": "Only .wav and .mp3 files are supported."}), 400
 
-    requested_stems = [s for s in request.form.get("stems", "").split(",") if s in STEM_KEYS]
+    model_key = request.form.get("model", "6stem")
+    if model_key not in MODEL_CHOICES:
+        return jsonify({"error": "Unknown model."}), 400
+
+    shifts = 2 if request.form.get("quality") == "better" else 1
+
+    valid_stems = set(MODEL_DIRECT_STEMS[model_key]) | set(VOCAL_STEM_KEYS)
+    requested_stems = [s for s in request.form.get("stems", "").split(",") if s in valid_stems]
     if not requested_stems:
-        return jsonify({"error": "No valid stems requested."}), 400
+        return jsonify({"error": "No valid stems requested for the selected model."}), 400
 
     tmp_dir = Path(tempfile.mkdtemp(prefix="stems_in_"))
     input_path = tmp_dir / f"input{suffix}"
@@ -233,7 +267,9 @@ def api_separate():
         }
 
     threading.Thread(
-        target=run_separation, args=(job_id, str(input_path), requested_stems), daemon=True
+        target=run_separation,
+        args=(job_id, str(input_path), requested_stems, model_key, shifts),
+        daemon=True,
     ).start()
 
     return jsonify({"job_id": job_id})
